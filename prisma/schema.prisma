@@ -1,0 +1,133 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modelo para conductores
+model Conductor {
+  id                 String             @id @default(cuid())
+  nombre             String
+  edad               Int
+  licencia           String?
+  experiencia        Int?
+  condicionesMedicas String?
+  medicamentos       String?
+  telefono           String?
+  email              String?            @unique
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  
+  // Relaciones
+  evaluacionesMedicas EvaluacionMedica[]
+  evaluacionesFatiga  EvaluacionFatiga[]
+  consultasMedicas    ConsultaMedica[]
+  viajes              Viaje[]
+  
+  @@map("conductores")
+}
+
+// Modelo para evaluaciones médicas
+model EvaluacionMedica {
+  id                 String   @id @default(cuid())
+  conductorId        String?
+  conductorNombre    String
+  conductorEdad      Int
+  datosMedicos       Json
+  resultadoEvaluacion String  @db.Text
+  clasificacionRiesgo String  // BAJO, MEDIO, ALTO
+  aptitudTransporte   String  // APTO, APTO CON RESTRICCIONES, NO APTO
+  modeloIA           String?  // claude, gpt
+  fechaEvaluacion    DateTime @default(now())
+  
+  // Relaciones
+  conductor          Conductor? @relation(fields: [conductorId], references: [id])
+  
+  @@map("evaluaciones_medicas")
+}
+
+// Modelo para evaluaciones de fatiga
+model EvaluacionFatiga {
+  id                String   @id @default(cuid())
+  conductorId       String
+  horasSueno        Float
+  tiempoConductor   Float
+  sintomasReportados String[]
+  resultado         String   @db.Text
+  nivelFatiga       String?  // BAJO, MODERADO, ALTO, CRÍTICO
+  recomendacion     String?  // CONTINUAR, DESCANSO_BREVE, DESCANSO_PROLONGADO, DETENER
+  modeloIA          String?  // claude, gpt
+  fechaEvaluacion   DateTime @default(now())
+  
+  // Relaciones
+  conductor         Conductor @relation(fields: [conductorId], references: [id])
+  
+  @@map("evaluaciones_fatiga")
+}
+
+// Modelo para consultas médicas en ruta
+model ConsultaMedica {
+  id            String   @id @default(cuid())
+  conductorId   String?
+  consulta      String
+  respuesta     String   @db.Text
+  nivelUrgencia String?  // NO_URGENTE, PRECAUCION, URGENTE, EMERGENCIA
+  modeloIA      String?  // claude, gpt
+  fechaConsulta DateTime @default(now())
+  
+  // Relaciones
+  conductor     Conductor? @relation(fields: [conductorId], references: [id])
+  
+  @@map("consultas_medicas")
+}
+
+// Modelo para historial de viajes
+model Viaje {
+  id              String   @id @default(cuid())
+  conductorId     String
+  origen          String
+  destino         String
+  distancia       Float?
+  duracionHoras   Float?
+  fechaInicio     DateTime
+  fechaFin        DateTime?
+  estado          String   @default("EN_CURSO") // EN_CURSO, COMPLETADO, CANCELADO
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  
+  // Relaciones
+  conductor       Conductor @relation(fields: [conductorId], references: [id])
+  
+  @@map("viajes")
+}
+
+// Modelo para alertas médicas
+model AlertaMedica {
+  id          String   @id @default(cuid())
+  conductorId String?
+  tipo        String   // FATIGA, MEDICA, EMERGENCIA
+  mensaje     String
+  prioridad   String   // BAJA, MEDIA, ALTA, CRITICA
+  estado      String   @default("ACTIVA") // ACTIVA, ATENDIDA, RESUELTA
+  fechaAlerta DateTime @default(now())
+  fechaAtencion DateTime?
+  
+  @@map("alertas_medicas")
+}
+
+// Modelo para configuración del sistema
+model ConfiguracionSistema {
+  id                    String   @id @default(cuid())
+  clave                 String   @unique
+  valor                 String
+  descripcion           String?
+  fechaActualizacion    DateTime @default(now())
+  
+  @@map("configuracion_sistema")
+}
