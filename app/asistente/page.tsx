@@ -1,31 +1,48 @@
 "use client"
 
 import type React from "react"
-
 import { useChat } from "ai/react"
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { MessageCircle, AlertTriangle, Phone, MapPin, Clock, Heart, Truck, Send } from "lucide-react"
+import {
+  MessageCircle,
+  AlertTriangle,
+  Phone,
+  MapPin,
+  Clock,
+  Heart,
+  Truck,
+  Send,
+  Mic,
+  StopCircle,
+  Loader,
+} from "lucide-react"
 import Link from "next/link"
 
 export default function AsistentePage() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+  const { messages, input, setInput, handleInputChange, handleSubmit, isLoading } = useChat({
     api: "/api/chat",
     initialMessages: [
       {
         id: "1",
         role: "assistant",
         content:
-          "¡Hola! Soy tu asistente médico de transporte. Estoy aquí para ayudarte durante tu viaje. ¿Cómo te sientes hoy? ¿Hay algo que te preocupe sobre tu estado de salud antes de iniciar el viaje?",
+          "¡Hola! Soy tu asistente médico de transporte. Describe tus síntomas o presiona el botón del micrófono para hablar.",
       },
     ],
   })
 
   const [emergencyMode, setEmergencyMode] = useState(false)
-  const [currentLocation, setCurrentLocation] = useState("Carretera México-Guadalajara, Km 245")
+  const [currentLocation] = useState("Carretera México-Guadalajara, Km 245")
+
+  // Estados para la grabación de voz
+  const [isRecording, setIsRecording] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
 
   const emergencyQuestions = [
     "¿Sientes dolor en el pecho?",
@@ -44,18 +61,117 @@ export default function AsistentePage() {
     "Dolor de espalda",
   ]
 
+  // Función para enviar notificación de emergencia
+  const sendEmergencyNotification = async (transcription: string) => {
+    try {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcription,
+          location: currentLocation,
+          timestamp: new Date().toISOString(),
+        }),
+      })
+      console.log("Notificación de emergencia enviada.")
+      setEmergencyMode(true)
+    } catch (error) {
+      console.error("Error al enviar la notificación de emergencia:", error)
+    }
+  }
+
+  // Función principal para manejar la grabación
+  const handleVoiceRecording = async () => {
+    if (isRecording) {
+      // Detener grabación
+      mediaRecorderRef.current?.stop()
+      setIsRecording(false)
+      return
+    }
+
+    // Iniciar grabación
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data)
+      }
+
+      mediaRecorder.onstop = async () => {
+        setIsTranscribing(true)
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
+        const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" })
+
+        // Enviar audio a la API de Whisper
+        const formData = new FormData()
+        formData.append("audio", audioFile)
+
+        try {
+          const response = await fetch("/api/transcribe", {
+            method: "POST",
+            body: formData,
+          })
+
+          if (!response.ok) throw new Error("La transcripción falló.")
+
+          const result = await response.json()
+          const transcribedText = result.transcription
+
+          setInput(transcribedText) // Pone el texto en el input
+
+          // Envía el mensaje al chat automáticamente
+          const syntheticEvent = { preventDefault: () => {} } as React.FormEvent<HTMLFormElement>
+
+          // Simular el evento con el texto transcrito
+          setTimeout(() => {
+            handleSubmit(syntheticEvent)
+          }, 100)
+
+          // Revisa si es una emergencia para enviar correo
+          const emergencyKeywords = [
+            "emergencia",
+            "ayuda",
+            "grave",
+            "accidente",
+            "urgente",
+            "no puedo respirar",
+            "dolor en el pecho",
+            "mareo",
+            "desmayo",
+          ]
+          if (emergencyKeywords.some((keyword) => transcribedText.toLowerCase().includes(keyword))) {
+            await sendEmergencyNotification(transcribedText)
+          }
+        } catch (error) {
+          console.error("Error al transcribir:", error)
+          setInput("Error al transcribir el audio. Inténtalo de nuevo.")
+        } finally {
+          setIsTranscribing(false)
+          // Detener el stream de audio
+          stream.getTracks().forEach((track) => track.stop())
+        }
+      }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+    } catch (error) {
+      console.error("Error al acceder al micrófono:", error)
+      alert("No se pudo acceder al micrófono. Por favor, revisa los permisos en tu navegador.")
+    }
+  }
+
   const handleQuickQuestion = (question: string) => {
-    // Crear un evento sintético para el formulario
     const syntheticEvent = {
       preventDefault: () => {},
     } as React.FormEvent<HTMLFormElement>
 
-    // Actualizar el input con la pregunta
     handleInputChange({
       target: { value: question },
     } as React.ChangeEvent<HTMLInputElement>)
 
-    // Enviar el mensaje después de un pequeño delay para asegurar que el input se actualice
     setTimeout(() => {
       handleSubmit(syntheticEvent)
     }, 100)
@@ -109,7 +225,7 @@ export default function AsistentePage() {
                   <MessageCircle className="mr-2 h-5 w-5" />
                   Chat Médico
                 </CardTitle>
-                <CardDescription>Conversa con tu asistente médico especializado en transporte</CardDescription>
+                <CardDescription>Conversa con tu asistente médico o usa el micrófono para hablar</CardDescription>
               </CardHeader>
 
               <CardContent className="flex-1 flex flex-col">
@@ -133,26 +249,60 @@ export default function AsistentePage() {
                     <div className="flex justify-start">
                       <div className="bg-gray-100 text-gray-900 p-3 rounded-lg">
                         <div className="flex items-center space-x-2">
-                          <div className="animate-pulse">Escribiendo...</div>
+                          <Loader className="animate-spin h-4 w-4" />
+                          <div>Escribiendo...</div>
                         </div>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Input */}
-                <form onSubmit={handleSubmit} className="flex space-x-2">
-                  <Input
-                    value={input}
-                    onChange={handleInputChange}
-                    placeholder="Describe cómo te sientes o qué necesitas..."
-                    className="flex-1"
-                    disabled={isLoading}
-                  />
-                  <Button type="submit" disabled={isLoading}>
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </form>
+                {/* Input con Micrófono */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <form onSubmit={handleSubmit} className="flex-1 flex gap-2">
+                      <Input
+                        value={input}
+                        onChange={handleInputChange}
+                        placeholder={
+                          isRecording
+                            ? "Grabando..."
+                            : isTranscribing
+                              ? "Transcribiendo..."
+                              : "Describe cómo te sientes o usa el micrófono..."
+                        }
+                        className="flex-1"
+                        disabled={isLoading || isRecording || isTranscribing}
+                      />
+                      <Button type="submit" disabled={isLoading || !input} size="icon">
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </form>
+
+                    {/* Botón de Micrófono Circular */}
+                    <Button
+                      onClick={handleVoiceRecording}
+                      size="icon"
+                      variant={isRecording ? "destructive" : "outline"}
+                      className="w-12 h-12 rounded-full"
+                      disabled={isTranscribing}
+                    >
+                      {isRecording ? (
+                        <StopCircle className="h-6 w-6" />
+                      ) : isTranscribing ? (
+                        <Loader className="h-6 w-6 animate-spin" />
+                      ) : (
+                        <Mic className="h-6 w-6" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Indicadores de Estado */}
+                  {isRecording && (
+                    <p className="text-center text-red-500 text-sm">🔴 Grabando... Presiona de nuevo para detener.</p>
+                  )}
+                  {isTranscribing && <p className="text-center text-blue-500 text-sm">⏳ Transcribiendo audio...</p>}
+                </div>
               </CardContent>
             </Card>
           </div>
