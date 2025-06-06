@@ -1,5 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Archivo: prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -7,127 +6,75 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("NEON_DATABASE_URL")
 }
 
-// Modelo para conductores
+// --- MODELOS DE TU BASE DE DATOS ---
+// Aquí debajo irían los modelos de tu base de datos
+// Por ejemplo: model Conductor, model EvaluacionMedica, etc.
+// Por ahora, los dejaremos fuera para que Prisma no dé error si no existen,
+// pero es importante que sepas que aquí es donde se definen.
+
 model Conductor {
-  id                 String             @id @default(cuid())
-  nombre             String
-  edad               Int
-  licencia           String?
-  experiencia        Int?
-  condicionesMedicas String?
-  medicamentos       String?
-  telefono           String?
-  email              String?            @unique
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  
-  // Relaciones
+  id                  String               @id @default(cuid())
+  nombre              String
+  email               String?              @unique
+  edad                Int
+  licencia            String?
+  experiencia         Int?
+  condiciones_medicas String?
+  medicamentos        String?
   evaluacionesMedicas EvaluacionMedica[]
-  evaluacionesFatiga  EvaluacionFatiga[]
   consultasMedicas    ConsultaMedica[]
-  viajes              Viaje[]
-  
-  @@map("conductores")
+  alertasMedicas      AlertaMedica[]
+  evaluacionesFatiga  EvaluacionFatiga[]
+  created_at          DateTime             @default(now())
+  updated_at          DateTime             @updatedAt
 }
 
-// Modelo para evaluaciones médicas
 model EvaluacionMedica {
-  id                 String   @id @default(cuid())
-  conductorId        String?
-  conductorNombre    String
-  conductorEdad      Int
-  datosMedicos       Json
-  resultadoEvaluacion String  @db.Text
-  clasificacionRiesgo String  // BAJO, MEDIO, ALTO
-  aptitudTransporte   String  // APTO, APTO CON RESTRICCIONES, NO APTO
-  modeloIA           String?  // claude, gpt
-  fechaEvaluacion    DateTime @default(now())
-  
-  // Relaciones
-  conductor          Conductor? @relation(fields: [conductorId], references: [id])
-  
-  @@map("evaluaciones_medicas")
+  id                  String   @id @default(cuid())
+  conductor           Conductor? @relation(fields: [conductorId], references: [id])
+  conductorId         String?
+  conductor_nombre    String
+  conductor_edad      Int
+  datos_medicos       Json
+  resultado_evaluacion String
+  clasificacion_riesgo String
+  aptitud_transporte  String
+  modelo_ia           String?
+  fecha_evaluacion    DateTime @default(now())
 }
 
-// Modelo para evaluaciones de fatiga
-model EvaluacionFatiga {
-  id                String   @id @default(cuid())
-  conductorId       String
-  horasSueno        Float
-  tiempoConductor   Float
-  sintomasReportados String[]
-  resultado         String   @db.Text
-  nivelFatiga       String?  // BAJO, MODERADO, ALTO, CRÍTICO
-  recomendacion     String?  // CONTINUAR, DESCANSO_BREVE, DESCANSO_PROLONGADO, DETENER
-  modeloIA          String?  // claude, gpt
-  fechaEvaluacion   DateTime @default(now())
-  
-  // Relaciones
-  conductor         Conductor @relation(fields: [conductorId], references: [id])
-  
-  @@map("evaluaciones_fatiga")
-}
-
-// Modelo para consultas médicas en ruta
 model ConsultaMedica {
-  id            String   @id @default(cuid())
-  conductorId   String?
-  consulta      String
-  respuesta     String   @db.Text
-  nivelUrgencia String?  // NO_URGENTE, PRECAUCION, URGENTE, EMERGENCIA
-  modeloIA      String?  // claude, gpt
-  fechaConsulta DateTime @default(now())
-  
-  // Relaciones
-  conductor     Conductor? @relation(fields: [conductorId], references: [id])
-  
-  @@map("consultas_medicas")
+  id             String    @id @default(cuid())
+  conductor      Conductor? @relation(fields: [conductorId], references: [id])
+  conductorId    String?
+  consulta       String
+  respuesta      String
+  modeloIA       String?
+  fechaConsulta  DateTime  @default(now())
 }
 
-// Modelo para historial de viajes
-model Viaje {
-  id              String   @id @default(cuid())
-  conductorId     String
-  origen          String
-  destino         String
-  distancia       Float?
-  duracionHoras   Float?
-  fechaInicio     DateTime
-  fechaFin        DateTime?
-  estado          String   @default("EN_CURSO") // EN_CURSO, COMPLETADO, CANCELADO
-  observaciones   String?
-  createdAt       DateTime @default(now())
-  
-  // Relaciones
-  conductor       Conductor @relation(fields: [conductorId], references: [id])
-  
-  @@map("viajes")
-}
-
-// Modelo para alertas médicas
 model AlertaMedica {
-  id          String   @id @default(cuid())
-  conductorId String?
-  tipo        String   // FATIGA, MEDICA, EMERGENCIA
-  mensaje     String
-  prioridad   String   // BAJA, MEDIA, ALTA, CRITICA
-  estado      String   @default("ACTIVA") // ACTIVA, ATENDIDA, RESUELTA
-  fechaAlerta DateTime @default(now())
-  fechaAtencion DateTime?
-  
-  @@map("alertas_medicas")
+  id            String    @id @default(cuid())
+  conductor     Conductor? @relation(fields: [conductorId], references: [id])
+  conductorId   String?
+  tipo          String // MEDICA, FATIGA, EMERGENCIA
+  mensaje       String
+  prioridad     String // BAJA, MEDIA, ALTA
+  estado        String // ACTIVA, CERRADA
+  fecha_alerta  DateTime  @default(now())
 }
 
-// Modelo para configuración del sistema
-model ConfiguracionSistema {
-  id                    String   @id @default(cuid())
-  clave                 String   @unique
-  valor                 String
-  descripcion           String?
-  fechaActualizacion    DateTime @default(now())
-  
-  @@map("configuracion_sistema")
+model EvaluacionFatiga {
+  id                   String   @id @default(cuid())
+  conductor            Conductor @relation(fields: [conductorId], references: [id])
+  conductorId          String
+  horasSueno           Int
+  tiempoConductor      Int
+  sintomasReportados   String[]
+  resultado            String
+  modeloIA             String?
+  fechaEvaluacion      DateTime @default(now())
 }
