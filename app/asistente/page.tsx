@@ -21,6 +21,7 @@ import {
   Loader,
 } from "lucide-react"
 import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
 
 export default function AsistentePage() {
   const { messages, input, setInput, handleInputChange, handleSubmit, isLoading } = useChat({
@@ -43,6 +44,8 @@ export default function AsistentePage() {
   const [isTranscribing, setIsTranscribing] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+
+  const { toast } = useToast()
 
   const emergencyQuestions = [
     "¿Sientes dolor en el pecho?",
@@ -105,6 +108,19 @@ export default function AsistentePage() {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
         const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" })
 
+        // Validación del tamaño del archivo (25MB máximo)
+        const maxSize = 25 * 1024 * 1024 // 25MB en bytes
+        if (audioFile.size > maxSize) {
+          toast({
+            title: "Archivo Demasiado Grande",
+            description: "La grabación es demasiado larga. Intenta grabar por menos tiempo.",
+            variant: "destructive",
+          })
+          setIsTranscribing(false)
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+
         // Enviar audio a la API de Whisper
         const formData = new FormData()
         formData.append("audio", audioFile)
@@ -115,17 +131,83 @@ export default function AsistentePage() {
             body: formData,
           })
 
-          if (!response.ok) throw new Error("La transcripción falló.")
+          // Manejo específico de códigos de estado
+          if (response.status === 401) {
+            toast({
+              title: "Error de Autenticación",
+              description:
+                "La clave de API de OpenAI no es válida. Por favor, verifícala en la configuración de Vercel.",
+              variant: "destructive",
+            })
+            setIsTranscribing(false)
+            stream.getTracks().forEach((track) => track.stop())
+            return
+          }
+
+          if (response.status === 400) {
+            toast({
+              title: "Error de Petición",
+              description: "No se envió un archivo de audio válido.",
+              variant: "destructive",
+            })
+            setIsTranscribing(false)
+            stream.getTracks().forEach((track) => track.stop())
+            return
+          }
+
+          if (response.status === 429) {
+            toast({
+              title: "Límite Excedido",
+              description: "Has excedido el límite de uso de la API. Intenta de nuevo más tarde.",
+              variant: "destructive",
+            })
+            setIsTranscribing(false)
+            stream.getTracks().forEach((track) => track.stop())
+            return
+          }
+
+          if (response.status === 413) {
+            toast({
+              title: "Archivo Demasiado Grande",
+              description: "El archivo de audio es demasiado grande. Intenta grabar por menos tiempo.",
+              variant: "destructive",
+            })
+            setIsTranscribing(false)
+            stream.getTracks().forEach((track) => track.stop())
+            return
+          }
+
+          if (!response.ok) {
+            throw new Error(`Error del servidor: ${response.status}`)
+          }
 
           const result = await response.json()
+
+          if (!result.transcription || result.transcription.trim() === "") {
+            toast({
+              title: "Transcripción Vacía",
+              description: "No se pudo transcribir el audio. Intenta hablar más claro o grabar por más tiempo.",
+              variant: "destructive",
+            })
+            setIsTranscribing(false)
+            stream.getTracks().forEach((track) => track.stop())
+            return
+          }
+
           const transcribedText = result.transcription
 
           setInput(transcribedText) // Pone el texto en el input
 
+          // Mostrar toast de éxito
+          toast({
+            title: "Transcripción Exitosa",
+            description: "Tu mensaje de voz ha sido transcrito correctamente.",
+            variant: "default",
+          })
+
           // Envía el mensaje al chat automáticamente
           const syntheticEvent = { preventDefault: () => {} } as React.FormEvent<HTMLFormElement>
 
-          // Simular el evento con el texto transcrito
           setTimeout(() => {
             handleSubmit(syntheticEvent)
           }, 100)
@@ -144,9 +226,19 @@ export default function AsistentePage() {
           ]
           if (emergencyKeywords.some((keyword) => transcribedText.toLowerCase().includes(keyword))) {
             await sendEmergencyNotification(transcribedText)
+            toast({
+              title: "Emergencia Detectada",
+              description: "Se ha enviado una alerta de emergencia automáticamente.",
+              variant: "destructive",
+            })
           }
         } catch (error) {
           console.error("Error al transcribir:", error)
+          toast({
+            title: "Error de Transcripción",
+            description: "Error al transcribir el audio. Verifica tu conexión e intenta de nuevo.",
+            variant: "destructive",
+          })
           setInput("Error al transcribir el audio. Inténtalo de nuevo.")
         } finally {
           setIsTranscribing(false)
